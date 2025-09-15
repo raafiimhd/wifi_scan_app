@@ -38,6 +38,7 @@ dependencies:
   wifi_scan: ^0.4.1+2
   flutter_local_notifications: ^17.2.1
   workmanager: ^0.6.0
+  flutter_foreground_task: ^9.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

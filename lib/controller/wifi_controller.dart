@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:get/get.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -9,15 +10,28 @@ class WifiController extends GetxController {
 
   static const int RSSI_THRESHOLD = -70;
 
-  WifiController() {
+  // Track last known state of each SSID
+  final Map<String, bool> _wifiStates = {};
+  Timer? _scanTimer;
+
+  @override
+  void onInit() {
+    super.onInit();
     _initNotifications();
-    scanAndCheck();
+    _startContinuousScan();
   }
 
   Future<void> _initNotifications() async {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: android);
     await _notifications.initialize(initSettings);
+  }
+
+  void _startContinuousScan() {
+    _scanTimer?.cancel();
+    _scanTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      scanAndCheck();
+    });
   }
 
   Future<void> scanAndCheck() async {
@@ -30,11 +44,18 @@ class WifiController extends GetxController {
     networks.value = results;
 
     for (var ap in results) {
-      if (ap.level > RSSI_THRESHOLD) {
-        _showNotification("${ap.ssid} is nearby", "Signal: ${ap.level} dBm");
-      } else {
-        _showNotification("${ap.ssid} is out of range", "Signal weak");
+      final ssid = ap.ssid;
+      final isInRange = ap.level > RSSI_THRESHOLD;
+      final wasInRange = _wifiStates[ssid] ?? false;
+
+      // Notify only when state changes
+      if (isInRange && !wasInRange) {
+        _showNotification("$ssid is nearby", "Signal: ${ap.level} dBm");
+      } else if (!isInRange && wasInRange) {
+        _showNotification("$ssid is out of range", "Signal weak");
       }
+
+      _wifiStates[ssid] = isInRange;
     }
   }
 
@@ -47,6 +68,18 @@ class WifiController extends GetxController {
       priority: Priority.high,
     );
     const details = NotificationDetails(android: android);
-    await _notifications.show(0, title, body, details);
+
+    await _notifications.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000, // unique ID
+      title,
+      body,
+      details,
+    );
+  }
+
+  @override
+  void onClose() {
+    _scanTimer?.cancel();
+    super.onClose();
   }
 }
