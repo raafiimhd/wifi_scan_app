@@ -1,17 +1,13 @@
 import 'dart:async';
-import 'dart:isolate';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-/// Background callback
-void wifiScanTask() {
-  FlutterForegroundTask.setTaskHandler(WifiTaskHandler());
-}
-
 class WifiTaskHandler extends TaskHandler {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
+  final Map<String, bool> _wifiStates = {}; // track Wi-Fi in/out state
+  static const int rssiThreshold = -70;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
@@ -20,16 +16,9 @@ class WifiTaskHandler extends TaskHandler {
     await _notifications.initialize(initSettings);
   }
 
-  /// Called when the task is triggered (manual or scheduled)
   @override
-  Future<void> onEvent(DateTime timestamp, SendPort? sendPort) async {
+  Future<void> onRepeatEvent(DateTime timestamp) async {
     await _scanWifi();
-  }
-
-  /// Called repeatedly based on [ForegroundTaskOptions.interval]
-  @override
-  void onRepeatEvent(DateTime timestamp) {
-    _scanWifi();
   }
 
   Future<void> _scanWifi() async {
@@ -37,14 +26,21 @@ class WifiTaskHandler extends TaskHandler {
     if (can == CanStartScan.yes) {
       await WiFiScan.instance.startScan();
     }
+
     final results = await WiFiScan.instance.getScannedResults();
 
     for (var ap in results) {
-      if (ap.level > -70) {
-        _showNotification("${ap.ssid} is nearby", "Signal: ${ap.level} dBm");
-      } else {
-        _showNotification("${ap.ssid} is out of range", "Signal weak");
+      final ssid = ap.ssid;
+      final isInRange = ap.level > rssiThreshold;
+      final wasInRange = _wifiStates[ssid] ?? false;
+
+      if (isInRange && !wasInRange) {
+        _showNotification("Nearby Wi-Fi", "$ssid entered range (${ap.level} dBm)");
+      } else if (!isInRange && wasInRange) {
+        _showNotification("Wi-Fi Lost", "$ssid went out of range (weak signal)");
       }
+
+      _wifiStates[ssid] = isInRange;
     }
   }
 
@@ -52,11 +48,12 @@ class WifiTaskHandler extends TaskHandler {
     const android = AndroidNotificationDetails(
       'wifi_channel',
       'Wi-Fi Alerts',
-      channelDescription: 'Wi-Fi in/out range alerts',
+      channelDescription: 'Alerts when Wi-Fi is nearby or lost',
       importance: Importance.max,
       priority: Priority.high,
     );
     const details = NotificationDetails(android: android);
+
     await _notifications.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
@@ -66,12 +63,16 @@ class WifiTaskHandler extends TaskHandler {
   }
 
   @override
-  Future<void> onDestroy(DateTime timestamp, bool isAppRestart) async {
-    // cleanup logic if needed
+  void onButtonPressed(String id) {
+    if (id == 'stop') {
+      FlutterForegroundTask.stopService();
+    } else if (id == 'scan') {
+      _scanWifi();
+    }
   }
 
   @override
-  void onButtonPressed(String id) {
-    // handle notification button presses if you add them
+  Future<void> onDestroy(DateTime timestamp, bool isAppRestart) async {
+    // cleanup if needed
   }
 }

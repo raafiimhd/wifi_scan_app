@@ -8,9 +8,7 @@ class WifiController extends GetxController {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
-  static const int RSSI_THRESHOLD = -70;
-
-  // Track last known state of each SSID
+  static const int rssiThreshold = -70;
   final Map<String, bool> _wifiStates = {};
   Timer? _scanTimer;
 
@@ -45,14 +43,13 @@ class WifiController extends GetxController {
 
     for (var ap in results) {
       final ssid = ap.ssid;
-      final isInRange = ap.level > RSSI_THRESHOLD;
+      final isInRange = ap.level > rssiThreshold;
       final wasInRange = _wifiStates[ssid] ?? false;
 
-      // Notify only when state changes
       if (isInRange && !wasInRange) {
-        _showNotification("$ssid is nearby", "Signal: ${ap.level} dBm");
+        _showNotification("Nearby Wi-Fi", "$ssid is in range (Signal: ${ap.level} dBm)");
       } else if (!isInRange && wasInRange) {
-        _showNotification("$ssid is out of range", "Signal weak");
+        _showNotification("Wi-Fi Lost", "$ssid went out of range (Signal weak)");
       }
 
       _wifiStates[ssid] = isInRange;
@@ -63,14 +60,14 @@ class WifiController extends GetxController {
     const android = AndroidNotificationDetails(
       'wifi_channel',
       'Wi-Fi Alerts',
-      channelDescription: 'Wi-Fi in/out range alerts',
+      channelDescription: 'Alerts when Wi-Fi is nearby or lost',
       importance: Importance.max,
       priority: Priority.high,
     );
     const details = NotificationDetails(android: android);
 
     await _notifications.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000, // unique ID
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
       body,
       details,
